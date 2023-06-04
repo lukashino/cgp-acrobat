@@ -2,209 +2,170 @@ import cgp
 import gymnasium as gym
 import numpy as np
 import sympy
-
-seed=8483992
-
-population_params = {
-    "n_parents": 8,
-    "seed": 8188211
-}
-
-genome_params = {
-    "n_inputs": 6,
-    "n_outputs": 1,
-    "n_columns": 64,
-    "n_rows": 1,
-    "levels_back": None,
-    "primitives": (
-            cgp.Add,
-            cgp.Sub,
-            cgp.Mul,
-            cgp.Div,
-            cgp.ConstantFloat,
-        )
-}
-
-
-ea_params = {
-    "n_offsprings": 4,
-    "tournament_size": 2,
-    "mutation_rate": 0.08,
-    "n_processes": 8
-}
-
-evolve_params = {
-        "max_generations": 1500,
-        "termination_fitness": 0.95,
-    }
-
-INDIVIDUAL_RUNS_CNT = 30
-INDIVIDUAL_RUN_STEPS_CNT = 200
-
-history = {}
-history["fitness_parents"] = []
-history["expr_champion"] = []
-def recording_callback(pop):
-    history["expr_champion"].append(pop.champion.to_sympy())
-    history["fitness_parents"].append(pop.fitness_parents())
+from typing import Callable, List, Dict, Optional, Any
+import argparse
 
 
 
+class CGPAgent:
+    def __init__(self, seed=8483992, individual_runs_cnt=30, individual_run_steps_cnt=200, render=False, 
+                 population_params=None, genome_params=None, ea_params=None, evolve_params=None):
+        self.seed = seed
+        self.render = render
+        self.individual_runs_cnt = individual_runs_cnt
+        self.individual_run_steps_cnt = individual_run_steps_cnt
+        self.population_params = population_params
+        self.genome_params = genome_params
+        self.ea_params = ea_params
+        self.evolve_params = evolve_params
 
+        self.history = {
+            "expr_champion": [],
+        }
 
+    def _recording_callback(self, pop: Any) -> None:
+        self.history["expr_champion"].append(pop.champion.to_sympy())
 
+    # on weird result we return neutral action
+    def _sanitize_cgp_action(self, next_action: float) -> int:
+        if next_action < 0 or next_action > 2:
+            return 1
 
+        try:
+            return int(np.round(next_action) % 3)
+        except ValueError:
+            return 1
+        
+    # return True on successful end-reaching state
+    def _simulate_individual_episode(
+            self, f: Callable, env: Any = None) -> bool:
+        observation, _ = env.reset()
+        for _ in range(self.individual_run_steps_cnt):
+            next_action = self._sanitize_cgp_action(f(*observation))
+            observation, _, terminated, truncated, _ = \
+                env.step(next_action)
 
+            if terminated:
+                return True
+            elif truncated:
+                return False
+            
+        return False
 
+    def _simulate_individual_runs(
+            self, f: Callable, render: bool = False) -> List[bool]:
+        env = gym.make('Acrobot-v1', render_mode="human" if render else None)
 
-def objective(individual):
-    if not individual.fitness_is_None():
+        episodes_success: List[bool] = []
+
+        for _ in range(self.individual_runs_cnt):
+            res = self._simulate_individual_episode(f, env)
+            if res:
+                episodes_success.append(
+                    res
+                )
+        
+        env.close()
+        return episodes_success
+
+    def _objective(self, individual: Any) -> Any:
+        if not individual.fitness_is_None():
+            return individual
+        
+        f = individual.to_func()
+        try:
+            res = self._simulate_individual_runs(f, render=self.render)
+        except ZeroDivisionError:
+            res = []
+
+        if len(res) > 0:
+            individual.fitness = float(len(res)) / self.individual_runs_cnt
+        else:
+            individual.fitness = -np.inf
+
         return individual
 
 
-    cum_reward_all_episodes = []
-    f = individual.to_func()
+    def visualize_final_solution(self) -> None:
+        expr = self.history["expr_champion"][-1]
+        expr_str = str(expr)
 
-    env = gym.make('Acrobot-v1') #, render_mode="human")
-    observation, _ = env.reset()
-    try:
-        for _ in range(INDIVIDUAL_RUNS_CNT):
-            observation, _ = env.reset()
+        print(f'visualizing behaviour for expression "{expr_str}" ')
 
-            cum_reward_this_episode = 0
-            for _ in range(INDIVIDUAL_RUN_STEPS_CNT):
-                next_action_npfloat = f(*observation)
-                # if next_action_npfloat is np.NaN or next_action_npfloat is np.Inf or next_action_npfloat is -np.Inf:
-                #     next_action_npfloat = 1.0
-                try:
-                    next_action = int(np.round(next_action_npfloat) % 3)
-                except ValueError:
-                    next_action = 1
-                    next_action_npfloat = 1.0
+        x_0, x_1, x_2, x_3, x_4, x_5 = sympy.symbols("x_0, x_1, x_2, x_3, x_4, x_5")
+        f_lambdify = sympy.lambdify([x_0, x_1, x_2, x_3, x_4, x_5], expr)
 
-                if next_action < 0 or next_action > 2:
-                    next_action = 1
-                
-                # next_action = int(next_action_npfloat)
-                observation, reward, terminated, truncated, _ = env.step(next_action)
-                # print(f"Next action float {next_action_npfloat}, nexta {next_action}, {observation}")
-                cos1 = observation[0]
-                syn1 = observation[1]
-                cos2 = observation[2]
-                syn2 = observation[3]
-                vel1 = observation[4]
-                vel2 = observation[5]
+        def f(x,y,z,a,b,c):
+            return f_lambdify(x,y,z,a,b,c)
+        
+        self._simulate_individual_runs(f, render=True)
 
-                angle_reward = (1 / syn1) % 12
-                velocity_reward = (vel1)
-
-                # cum_reward_this_episode += angle_reward + velocity_reward
-                # if reward == 100:
-                #     reward = 10000
-
-                cum_reward_this_episode += reward
-
-                if terminated or truncated:
-                    cum_reward_this_episode += 100
-                    cum_reward_all_episodes.append(cum_reward_this_episode)
-                    cum_reward_this_episode = 0
-                    observation, _ = env.reset()
-                    continue
-
-        n_episodes = float(len(cum_reward_all_episodes))
-        # mean_cum_reward = np.mean(cum_reward_all_episodes)
-        if n_episodes > 0:
-            # mean_cum_reward = np.mean(cum_reward_all_episodes)
-            individual.fitness = n_episodes / INDIVIDUAL_RUNS_CNT
-            print(f"Fitness - {individual.fitness} ")
-        else:
-            individual.fitness = -np.inf
-    
-    except ZeroDivisionError:
-        individual.fitness = -np.inf
-
-    env.close()
-    return individual
-
-def visualize_behaviour_for_evolutionary_jumps(seed, history, only_final_solution=True):
-    n_runs_per_individual = 1
-    n_total_steps = 499
-
-    expr = history["expr_champion"][-1]
-    expr_str = str(expr).replace("x_0", "x").replace("x_1", "dx/dt")
-
-    print(f'visualizing behaviour for expression "{expr_str}" ')
-
-    x_0, x_1, x_2, x_3, x_4, x_5 = sympy.symbols("x_0, x_1, x_2, x_3, x_4, x_5")
-    f_lambdify = sympy.lambdify([x_0, x_1, x_2, x_3, x_4, x_5], expr)
-
-    def f(x,y,z,a,b,c):
-        return f_lambdify(x,y,z,a,b,c)
-    
-    cum_reward_all_episodes = []
-    env = gym.make('Acrobot-v1', render_mode="human")
-    observation, _ = env.reset()
-    for _ in range(INDIVIDUAL_RUNS_CNT):
-        observation, _ = env.reset()
-
-        cum_reward_this_episode = 0
-        for _ in range(INDIVIDUAL_RUN_STEPS_CNT):
-            next_action_npfloat = f(*observation)
-            try:
-                next_action = int(np.round(next_action_npfloat) % 3)
-            except ValueError:
-                next_action = 1
-                next_action_npfloat = 1.0
-
-            if next_action < 0 or next_action > 2:
-                next_action = 1
-            
-            # next_action = int(next_action_npfloat)
-            observation, reward, terminated, truncated, _ = env.step(next_action)
-
-            cum_reward_this_episode += reward
-
-            if terminated or truncated:
-                print("end story")
-                cum_reward_this_episode += 50
-                cum_reward_all_episodes.append(cum_reward_this_episode)
-                cum_reward_this_episode = 0
-                observation, _ = env.reset()
-
-    env.close()
-    # def f(x,y):
-    #     return f_lambdify(x, y)
-
-    #         inner_objective(f, seed, n_runs_per_individual, n_total_steps, render=True)
-
-    # max_fitness = -np.inf
-    # for i, fitness in enumerate(history["fitness_champion"]):
-
-    #     if only_final_solution and i != (len(history["fitness_champion"]) - 1):
-    #         continue
-
-    #     if fitness > max_fitness:
-    #         expr = history["expr_champion"][i]
-    #         expr_str = str(expr).replace("x_0", "x").replace("x_1", "dx/dt")
-
-    #         print(f'visualizing behaviour for expression "{expr_str}" (fitness: {fitness:.05f})')
-
-    #         x_0, x_1 = sympy.symbols("x_0, x_1")
-    #         f_lambdify = sympy.lambdify([x_0, x_1], expr)
-
-    #         def f(x,y):
-    #             return f_lambdify(x, y)
-
-    #         inner_objective(f, seed, n_runs_per_individual, n_total_steps, render=True)
-
-    #         max_fitness = fitness
+    def evolve(self):
+        pop = cgp.Population(**self.population_params, genome_params=self.genome_params)
+        ea = cgp.ea.MuPlusLambda(**self.ea_params)
+        cgp.evolve(pop, self._objective, ea, **self.evolve_params, print_progress=True, callback=self._recording_callback)
 
 
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description='CGP Agent parameters.')
 
-pop = cgp.Population(**population_params, genome_params=genome_params)
-ea = cgp.ea.MuPlusLambda(**ea_params)
-print("all good")
-cgp.evolve(pop, objective, ea, **evolve_params, print_progress=True, callback=recording_callback)
-print("more than good")
+    # CGPAgent arguments
+    parser.add_argument('--seed', type=int, default=8483992, help='Seed value for the simulator agent.')
+    parser.add_argument('--individual_runs_cnt', type=int, default=30, help='Individual runs count.')
+    parser.add_argument('--individual_run_steps_cnt', type=int, default=200, help='Individual run steps count.')
+    parser.add_argument('--render', type=bool, action=argparse.BooleanOptionalAction, default=False, help='Visualizing the whole learning process.')
+    parser.add_argument('--n_parents', type=int, default=8, help='Number of parents.')
+    parser.add_argument('--pop_seed', type=int, default=8188211, help='Seed value for the population.')
+    parser.add_argument('--n_columns', type=int, default=64, help='Number of columns.')
+    parser.add_argument('--n_rows', type=int, default=1, help='Number of rows.')
+    parser.add_argument('--levels_back', default=None, help='Levels back parameter.')
+    parser.add_argument('--n_offsprings', type=int, default=4, help='Number of offsprings.')
+    parser.add_argument('--tournament_size', type=int, default=2, help='Tournament size.')
+    parser.add_argument('--mutation_rate', type=float, default=0.08, help='Mutation rate.')
+    parser.add_argument('--n_processes', type=int, default=8, help='Number of processes.')
+    parser.add_argument('--max_generations', type=int, default=1500, help='Max generations.')
+    parser.add_argument('--termination_fitness', type=float, default=0.95, help='Termination fitness from 0 to 1.')
+    parser.add_argument('--visualize', type=bool, action=argparse.BooleanOptionalAction, default=False, help='Whether to visualize the final solution.')
 
-visualize_behaviour_for_evolutionary_jumps(1, history, only_final_solution=True)
+    args = parser.parse_args()
+
+    agent = CGPAgent(
+        seed=args.seed,
+        individual_runs_cnt=args.individual_runs_cnt,
+        individual_run_steps_cnt=args.individual_run_steps_cnt,
+        render=args.render,
+        population_params={
+            "n_parents": args.n_parents,
+            "seed": args.pop_seed
+        },
+        genome_params={
+            "n_inputs": 6,
+            "n_outputs": 1,
+            "n_columns": args.n_columns,
+            "n_rows": args.n_rows,
+            "levels_back": args.levels_back,
+            "primitives": (
+                cgp.Add,
+                cgp.Sub,
+                cgp.Mul,
+                cgp.Div,
+                cgp.ConstantFloat,
+            )
+        },
+        ea_params={
+            "n_offsprings": args.n_offsprings,
+            "tournament_size": args.tournament_size,
+            "mutation_rate": args.mutation_rate,
+            "n_processes": args.n_processes
+        },
+        evolve_params={
+            "max_generations": args.max_generations,
+            "termination_fitness": args.termination_fitness,
+        }
+    )
+
+
+    agent.evolve()
+
+    if args.visualize:
+        agent.visualize_final_solution()
