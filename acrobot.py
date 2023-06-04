@@ -10,39 +10,10 @@ population_params = {
     "seed": 8188211
 }
 
-
-class ActionConverter(cgp.OperatorNode):
-    _arity = 1
-    _def_output = "x_0 % 3"
-
-# class Sine(cgp.OperatorNode):
-#     import math
-#     _arity = 1
-#     _def_output = "math.sin(x_0)"
-#     _def_numpy_output = "np.sin(x_0)"
-
-
-# class Cosine(cgp.OperatorNode):
-#     import math
-#     _arity = 1
-#     _def_output = "math.cos(x_0)"
-#     _def_numpy_output = "np.cos(x_0)"
-
-
-class ConstantFloatMinusTorque(cgp.ConstantFloat):
-    _def_output = "0.0"
-
-class ConstantFloatNeutralTorque(cgp.ConstantFloat):
-    _def_output = "1.0"
-
-class ConstantFloatPlusTorque(cgp.ConstantFloat):
-    _def_output = "2.0"
-
-
 genome_params = {
     "n_inputs": 6,
     "n_outputs": 1,
-    "n_columns": 24,
+    "n_columns": 64,
     "n_rows": 1,
     "levels_back": None,
     "primitives": (
@@ -51,29 +22,24 @@ genome_params = {
             cgp.Mul,
             cgp.Div,
             cgp.ConstantFloat,
-            # Sine,
-            # Cosine,
-            # ConstantFloatMinusTorque,
-            # ConstantFloatNeutralTorque,
-            # ConstantFloatPlusTorque,
         )
 }
 
 
 ea_params = {
-    "n_offsprings": 8,
-    "tournament_size": 1,
+    "n_offsprings": 4,
+    "tournament_size": 2,
     "mutation_rate": 0.08,
     "n_processes": 8
 }
 
 evolve_params = {
         "max_generations": 1500,
-        "termination_fitness": 0,
+        "termination_fitness": 0.95,
     }
 
-INDIVIDUAL_RUNS_CNT = 5
-INDIVIDUAL_RUN_STEPS_CNT = 499
+INDIVIDUAL_RUNS_CNT = 30
+INDIVIDUAL_RUN_STEPS_CNT = 200
 
 history = {}
 history["fitness_parents"] = []
@@ -100,10 +66,10 @@ def objective(individual):
     f = individual.to_func()
 
     env = gym.make('Acrobot-v1') #, render_mode="human")
-    observation, _ = env.reset(seed=seed)
+    observation, _ = env.reset()
     try:
         for _ in range(INDIVIDUAL_RUNS_CNT):
-            observation, _ = env.reset(seed=seed)
+            observation, _ = env.reset()
 
             cum_reward_this_episode = 0
             for _ in range(INDIVIDUAL_RUN_STEPS_CNT):
@@ -139,17 +105,18 @@ def objective(individual):
                 cum_reward_this_episode += reward
 
                 if terminated or truncated:
-                    print("end story")
                     cum_reward_this_episode += 100
                     cum_reward_all_episodes.append(cum_reward_this_episode)
                     cum_reward_this_episode = 0
-                    observation, _ = env.reset(seed=seed)
+                    observation, _ = env.reset()
+                    continue
 
         n_episodes = float(len(cum_reward_all_episodes))
         # mean_cum_reward = np.mean(cum_reward_all_episodes)
         if n_episodes > 0:
-            mean_cum_reward = np.amax(cum_reward_all_episodes)
-            individual.fitness = mean_cum_reward # n_episodes / INDIVIDUAL_RUNS_CNT + 
+            # mean_cum_reward = np.mean(cum_reward_all_episodes)
+            individual.fitness = n_episodes / INDIVIDUAL_RUNS_CNT
+            print(f"Fitness - {individual.fitness} ")
         else:
             individual.fitness = -np.inf
     
@@ -176,9 +143,9 @@ def visualize_behaviour_for_evolutionary_jumps(seed, history, only_final_solutio
     
     cum_reward_all_episodes = []
     env = gym.make('Acrobot-v1', render_mode="human")
-    observation, _ = env.reset(seed=seed)
+    observation, _ = env.reset()
     for _ in range(INDIVIDUAL_RUNS_CNT):
-        observation, _ = env.reset(seed=seed)
+        observation, _ = env.reset()
 
         cum_reward_this_episode = 0
         for _ in range(INDIVIDUAL_RUN_STEPS_CNT):
@@ -202,7 +169,7 @@ def visualize_behaviour_for_evolutionary_jumps(seed, history, only_final_solutio
                 cum_reward_this_episode += 50
                 cum_reward_all_episodes.append(cum_reward_this_episode)
                 cum_reward_this_episode = 0
-                observation, _ = env.reset(seed=seed)
+                observation, _ = env.reset()
 
     env.close()
     # def f(x,y):
