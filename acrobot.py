@@ -285,7 +285,7 @@ if __name__ == "__main__":
     parser.add_argument('--render', type=bool, action=argparse.BooleanOptionalAction, default=False, help='Visualizing the whole learning process.')
     parser.add_argument('--n_parents', type=int, default=8, help='Number of parents.')
     parser.add_argument('--pop_seed', type=int, default=8188211, help='Seed value for the population.')
-    parser.add_argument('--n_columns', type=int, default=64, help='Number of columns.')
+    parser.add_argument('--n_columns', type=int, default=16, help='Number of columns.')
     parser.add_argument('--n_rows', type=int, default=1, help='Number of rows.')
     parser.add_argument('--levels_back', type=int, default=None, help='Levels back parameter.')
     parser.add_argument('--n_offsprings', type=int, default=4, help='Number of offsprings.')
