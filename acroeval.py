@@ -1,6 +1,8 @@
 import seaborn as sns
 import pandas as pd
 import matplotlib.pyplot as plt
+import argparse
+from typing import List
 
 import glob
 
@@ -11,94 +13,133 @@ import glob
 # i want to use and combine test-param/test-values
 # files = glob.glob('*replay_id*.csv')
 # files = glob.glob('individuals_p8_gen_cols64_gen_rows1_gen_lbacksNone_gen_pmtvs5_ea_offspgs1_ea_trnmtsz1_ea_mutrt0.08_ea_proc_cnt8_tfit0.95_exp_id*_replay_id*')
-files = glob.glob('individuals_p{1,2,4,8}_gen_cols64_gen_rows1_gen_lbacksNone_gen_pmtvs5_ea_offspgs4_ea_trnmtsz1_ea_mutrt0.08_ea_proc_cnt8_tfit0.95_exp_id*_replay_id*.csv')
-# individuals_p{1,2,4,8}_gen_cols64_gen_rows1_gen_lbacksNone_gen_pmtvs5_ea_offspgs4_ea_trnmtsz1_ea_mutrt0.08_ea_proc_cnt8_tfit0.95_exp_id*_replay_id*.csv
 
-frames = []
+props_human = {
+    '_p': 'Parents',
+    '_gen_cols': 'CGP columns',
+    '_gen_rows': 'CGP rows',
+    '_gen_lbacks': 'CGP L-Backs',
+    '_gen_pmtvs': 'CGP Primitives (operations)',
+    '_ea_offspgs': 'Offsprings',
+    '_ea_trnmtsz': 'Tournament size',
+    '_ea_mutrt': 'Mutation rate',
+    '_ea_proc_cnt': 'Parallel processes',
+    '_tfit': 'Termination fitness',
+}
 
-# # Create a list to hold dataframes
-# df_list = []
+# PUT - property under test
+def get_PUT_name(filenames: List[str]) -> str:
+    if len(filenames) < 1:
+        raise Exception("Filename list is empty")
+    
+    # Store previous property values
+    prev_values = {}
+    # The property that changed
+    changed_prop = None
 
-# for file in files:
-#     # Read each CSV file
-#     df = pd.read_csv(file)
-#     # df_list.append(df)
-# # Concatenate all dataframes in the list
-# # df_all = pd.concat(df_list, ignore_index=True)
-# # Create boxplot
-# # plt.figure(figsize=(10, 6))
-# # sns.boxplot(x='Replay ID', y='Time To Completion [seconds]', data=df_all)
-# # plt.title('Boxplot of Time To Completion [seconds] for Each Replay ID')
-# # plt.show()
+    # Iterate over file names
+    for file_name in filenames:
+        # Iterate over properties
+        for prop, _ in props_human.items():
+            # Find the property in the file name
+            start_index = file_name.find(prop)
+            if start_index != -1:
+                end_index = file_name.find("_", start_index + len(prop) + 1)
+                end_index = end_index if end_index != -1 else len(file_name)
 
-#     # Calculate total time and max fitness for each experiment
-#     total_time = df['Time To Completion [seconds]'].sum()
-#     max_fitness = df['Fitness'].max()
-#     num_generations = df['Individual ID'].nunique()
+                # Extract and parse the property value
+                prop_value = file_name[start_index + len(prop):end_index]
+                print(prop_value)
 
-#     # Get the experiment ID from the data (assuming all rows have the same experiment ID)
-#     experiment_id = df['Experiment ID'].iloc[0]
+                # Compare with the previous value
+                if prop in prev_values and prev_values[prop] != prop_value:
+                    changed_prop = prop
+                    break
 
-#     # Get the replay ID, same assumption
-#     replay_id = df['Replay ID'].iloc[0]
+                # Store the current value
+                prev_values[prop] = prop_value
 
-#     # Create a new DataFrame with the summary information
-#     summary_df = pd.DataFrame({
-#         'Experiment ID': [experiment_id],
-#         'Replay ID': [replay_id],
-#         'Experiment\'s Time To Completion [seconds]': [total_time],
-#         'Experiment Max Fitness': [max_fitness],
-#         'Number of Generations': [num_generations]
-#     })
+        # Stop if a change was detected
+        if changed_prop:
+            break
 
-#     frames.append(summary_df)
-#     print("ok")
+    if changed_prop:
+        return changed_prop
+    else:
+        raise ValueError('No property under test detected from file names')
 
-# # Concatenate all dataframes
-# result = pd.concat(frames, ignore_index=True)
+# PUT - property under values
+def get_PUT_values(filenames: List[str], queried_property: str) -> List[str]:
+    if len(filenames) < 1:
+        raise Exception("Filename list is empty")
 
+    unique_values = set()
 
+    # Iterate over file names
+    for file_name in filenames:
+        # Find the property in the file name
+        start_index = file_name.find(queried_property)
+        if start_index != -1:
+            end_index = file_name.find("_", start_index + len(queried_property) + 1)
+            end_index = end_index if end_index != -1 else len(file_name)
 
-# # # plt.figure(figsize=(10, 6))
-# # # sns.boxplot(x='Experiment ID', y='Time To Completion [seconds]', hue='Replay ID', data=result)
-# # # plt.show()
+            # Extract and parse the property value
+            prop_value = file_name[start_index + len(queried_property):end_index]
 
-# # # Write the result to a new CSV file
-# result.to_csv('merged.csv', index=False)
+            # Add the current value to the set
+            unique_values.add(float(prop_value))
+            
+    if not unique_values:
+        raise ValueError(f"No values found for the property '{queried_property}' in the provided filenames.")
+    
+    # Convert set to list and return
+    return sorted(list(unique_values))
 
-for file in files:
-    # Read each CSV file
-    df = pd.read_csv(file)
-    # Calculate total time and max fitness for each experiment
-    total_time = df['Time To Completion [seconds]'].sum()
-    max_fitness = df['Fitness'].max()
-    num_generations = df['Individual ID'].nunique()
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description='Benchmark an external program.')
+    parser.add_argument('--result-path', type=str, required=True, help='Path to the results for evaluation e.g. "results/gen_cols/"')
+    args = parser.parse_args()
 
-    # Get the experiment ID from the data (assuming all rows have the same experiment ID)
-    experiment_id = df['Experiment ID'].iloc[0]
+    files = glob.glob(f'{args.result_path}/individuals_*')
+    test_prop_name = get_PUT_name(files)
+    test_prop_vals = get_PUT_values(files, test_prop_name)
+    frames = []
 
-    # Get the replay ID, same assumption
-    replay_id = df['Replay ID'].iloc[0]
+    for file in files:
+        print(file)
+        # Read each CSV file
+        df = pd.read_csv(file)
+        # Calculate total time and max fitness for each experiment
+        total_time = df['Time To Completion [seconds]'].sum()
+        max_fitness = df['Fitness'].max()
+        num_generations = df['Individual ID'].nunique()
 
-    # Create a new DataFrame with the summary information
-    summary_df = pd.DataFrame({
-        'Experiment ID': [experiment_id],
-        'Replay ID': [replay_id],
-        'Experiment\'s Time To Completion [seconds]': [total_time],
-        'Experiment Max Fitness': [max_fitness],
-        'Number of Generations': [num_generations]
-    })
+        # Get the experiment ID from the data (assuming all rows have the same experiment ID)
+        experiment_id = df['Experiment ID'].iloc[0]
 
-    frames.append(summary_df)
-    print("ok")
+        # Get the replay ID, same assumption
+        replay_id = df['Replay ID'].iloc[0]
 
-result = pd.concat(frames, ignore_index=True)
-result.to_csv('merged.csv', index=False)
+        # Create a new DataFrame with the summary information
+        summary_df = pd.DataFrame({
+            'Experiment ID': [experiment_id],
+            'Replay ID': [replay_id],
+            'Test Property Value': [test_prop_vals[experiment_id]],
+            'Experiment\'s Time To Completion [seconds]': [total_time],
+            'Experiment Max Fitness': [max_fitness],
+            'Number of Generations': [num_generations]
+        })
 
-# Create boxplot
-plt.figure(figsize=(10, 6))
-sns.boxplot(x='Experiment ID', y='Experiment\'s Time To Completion [seconds]', data=result)
-# sns.boxplot(x='Experiment ID', y='Experiment\'s Time To Completion [seconds]', data=result, showfliers=False)
+        frames.append(summary_df)
 
-plt.title('Boxplot of Experiment\'s Time To Completion [seconds] for Each Experiment ID')
-plt.show()
+    result = pd.concat(frames, ignore_index=True)
+    result.to_csv(f'{args.result_path}/merged{test_prop_name}.csv', index=False)
+
+    # Create boxplot
+    plt.figure(figsize=(10, 6))
+    # sns.boxplot(x='Experiment ID', y='Experiment\'s Time To Completion [seconds]', data=result)
+    sns.boxplot(x='Test Property Value', y='Experiment\'s Time To Completion [seconds]', data=result).set(xlabel=f'{props_human[test_prop_name]}')
+    # sns.boxplot(x='Experiment ID', y='Experiment\'s Time To Completion [seconds]', data=result, showfliers=False)
+
+    plt.title('Boxplot of Experiment\'s Time To Completion [seconds] for Each Experiment ID')
+    plt.show()
