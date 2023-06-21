@@ -197,7 +197,22 @@ class CGPAgent:
         self.ea_params = ea_params
         self.evolve_params = evolve_params
 
-        self.logger_ir: ILogCGPIndividualRun = CSVLoggerCGPIndividualRun("ir.csv")
+        self.logger_ir: ILogCGPIndividualRun = CSVLoggerCGPIndividualRun(
+            f"indrun"
+            f"_p{self.population_params['n_parents']}"
+            f"_gen_cols{self.genome_params['n_columns']}"
+            f"_gen_rows{self.genome_params['n_rows']}"
+            f"_gen_lbacks{self.genome_params['levels_back']}"
+            f"_gen_pmtvs{len(self.genome_params['primitives'])}"
+            f"_ea_offspgs{self.ea_params['n_offsprings']}"
+            f"_ea_trnmtsz{self.ea_params['tournament_size']}"
+            f"_ea_mutrt{self.ea_params['mutation_rate']}"
+            f"_ea_proc_cnt{self.ea_params['n_processes']}"
+            f"_tfit{self.evolve_params['termination_fitness']}"
+            f"_exp_id{self.exp_id}"
+            f"_replay_id{self.replay_id}"
+            ".csv"
+        )
         self.logger_i: ILogCGPIndividual = CSVLoggerCGPIndividual(
             f"individuals"
             f"_p{self.population_params['n_parents']}"
